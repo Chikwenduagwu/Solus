@@ -1,0 +1,26 @@
+// Auction registry.
+//
+// Midnight contracts are deployed individually — there is no built-in
+// "list all instances of contract X" query. To let the marketplace page
+// discover auctions without a centralized backend, every newly created
+// auction registers its deployed contract address here. The frontend
+// reads this map (via the public indexer) to enumerate auctions, then
+// reads each individual auction contract's ledger for its own state.
+//
+// Verified against the Compact compiler v0.31.1 (`compact compile --skip-zk`).
+
+pragma language_version >= 0.16;
+
+import CompactStandardLibrary;
+
+export ledger auctionAddresses: Map<Uint<64>, Bytes<32>>;
+export ledger auctionCount: Counter;
+
+// Registers a deployed auction contract's address and returns its
+// registry id. Called once, immediately after an auction is deployed.
+export circuit registerAuction(contractAddress: Bytes<32>): Uint<64> {
+  const id = auctionCount as Uint<64>;
+  auctionAddresses.insert(id, disclose(contractAddress));
+  auctionCount.increment(1);
+  return id;
+}

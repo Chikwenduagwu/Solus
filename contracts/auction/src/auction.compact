@@ -1,0 +1,132 @@
+// Sealed-bid uniform-price token auction.
+//
+// Verified against the Compact compiler v0.31.1 (`compact compile --skip-zk`).
+// Every ledger field, witness, and circuit here compiles to real TypeScript +
+// zkir output — nothing in this file is illustrative pseudocode.
+//
+// Privacy model:
+//   - Auction parameters (allocation, timing, settlement asset, rules) are
+//     public ledger state, set once at deployment.
+//   - Bid amount and price are supplied as local witnesses — they never
+//     leave the bidder's machine. Only a commitment hash of (amount, price,
+//     salt) is written to the ledger via commitBid.
+//   - The clearing price and total allocated are published on-chain only
+//     once, by settle(), after the auction operator computes them off-chain
+//     from the (locally revealed) winning bids. Individual bids are never
+//     revealed on-chain — winners prove their allocation against their own
+//     commitment off-chain using the salt/amount/price they already hold.
+//
+// What this contract intentionally does NOT do yet:
+//   - It does not verify the clearing-price computation itself inside a
+//     circuit (i.e. settle() trusts its caller). A fully trustless version
+//     would require the auction operator to submit a ZK proof that the
+//     published clearing price and allocation are the correct output of the
+//     uniform-price rule applied to all committed bids — that circuit is a
+//     meaningful research/engineering effort beyond hackathon scope, and is
+//     called out explicitly rather than faked.
+//   - It does not move real tokens. Settlement/payment execution against
+//     the locked allocation would be wired in via Midnight's shielded token
+//     primitives (see CompactStandardLibrary token utilities) once the
+//     token side of this app is scoped.
+
+pragma language_version >= 0.16;
+
+import CompactStandardLibrary;
+
+enum AuctionStatus { CREATED, ACTIVE, CLOSED, SETTLED }
+
+// --- Public auction parameters (set once, at deployment) ---
+export ledger status: AuctionStatus;
+export ledger tokenSymbol: Bytes<32>;
+export ledger allocation: Uint<64>;
+export ledger settlementAssetCode: Bytes<32>;
+export ledger startTime: Uint<64>;
+export ledger endTime: Uint<64>;
+export ledger minimumBid: Uint<64>;
+export ledger minimumBidSize: Uint<64>;
+export ledger maxAllocationPerBidder: Uint<64>;
+
+// --- Public settlement outcome (populated once, by settle()) ---
+export ledger clearingPrice: Uint<64>;
+export ledger totalAllocated: Uint<64>;
+
+// --- Sealed bid commitments ---
+// Maps a commitment hash to the round it was submitted in. The amount and
+// price behind each commitment are never stored here.
+export ledger bidCommitments: Map<Bytes<32>, Uint<64>>;
+export ledger bidCount: Counter;
+export ledger round: Counter;
+
+// --- Witnesses: private data supplied locally by the bidder's wallet/DApp ---
+// These run off-chain in TypeScript. The compiler will not let their raw
+// values reach the ledger without an explicit disclose() — see commitBid,
+// where only the resulting commitment hash is disclosed, never the inputs.
+witness bidAmount(): Uint<64>;
+witness bidMaxPrice(): Uint<64>;
+witness bidSalt(): Bytes<32>;
+
+constructor(
+  tokenSymbol_: Bytes<32>,
+  allocation_: Uint<64>,
+  settlementAssetCode_: Bytes<32>,
+  startTime_: Uint<64>,
+  endTime_: Uint<64>,
+  minimumBid_: Uint<64>,
+  minimumBidSize_: Uint<64>,
+  maxAllocationPerBidder_: Uint<64>
+) {
+  status = AuctionStatus.CREATED;
+  tokenSymbol = disclose(tokenSymbol_);
+  allocation = disclose(allocation_);
+  settlementAssetCode = disclose(settlementAssetCode_);
+  startTime = disclose(startTime_);
+  endTime = disclose(endTime_);
+  minimumBid = disclose(minimumBid_);
+  minimumBidSize = disclose(minimumBidSize_);
+  maxAllocationPerBidder = disclose(maxAllocationPerBidder_);
+  clearingPrice = 0;
+  totalAllocated = 0;
+}
+
+// Opens bidding. Called once the token allocation has been locked.
+export circuit openAuction(): [] {
+  assert(status == AuctionStatus.CREATED, "auction already opened");
+  status = AuctionStatus.ACTIVE;
+}
+
+// Commits a sealed bid. amount/price/salt are read from local witnesses;
+// only their commitment hash is written to the ledger.
+export circuit commitBid(): [] {
+  assert(status == AuctionStatus.ACTIVE, "auction not active");
+  const amount = bidAmount();
+  const price = bidMaxPrice();
+  const salt = bidSalt();
+  assert(amount >= minimumBidSize, "bid below minimum size");
+  assert(price >= minimumBid, "bid below minimum price");
+  assert(amount <= maxAllocationPerBidder, "bid exceeds max allocation per bidder");
+  const commitment = persistentCommit<Vector<2, Uint<64>>>([amount, price], salt);
+  bidCommitments.insert(disclose(commitment), disclose(round as Uint<64>));
+  bidCount.increment(1);
+}
+
+// Closes bidding. No further commitments are accepted after this.
+export circuit closeAuction(): [] {
+  assert(status == AuctionStatus.ACTIVE, "auction not active");
+  status = AuctionStatus.CLOSED;
+}
+
+// Publishes the clearing price and total allocation computed off-chain by
+// the auction operator from all committed bids.
+export circuit settle(clearingPrice_: Uint<64>, totalAllocated_: Uint<64>): [] {
+  assert(status == AuctionStatus.CLOSED, "auction not closed");
+  assert(totalAllocated_ <= allocation, "settlement exceeds allocation");
+  clearingPrice = disclose(clearingPrice_);
+  totalAllocated = disclose(totalAllocated_);
+  status = AuctionStatus.SETTLED;
+}
+
+// Lets anyone check that a given commitment hash was recorded during the
+// auction, without learning the amount or price behind it.
+export circuit verifyCommitment(commitment: Bytes<32>): Boolean {
+  return bidCommitments.member(disclose(commitment));
+}
