@@ -13,7 +13,7 @@
     "deploy:registry": "tsx scripts/deploy-registry.ts"
   },
   "dependencies": {
-    "@midnight-ntwrk/compact-runtime": "^0.16.0",
+    "@midnight-ntwrk/compact-runtime": "^0.19.0",
     "@midnight-ntwrk/dapp-connector-api": "^4.0.1",
     "@midnight-ntwrk/ledger": "^4.0.0",
     "@midnight-ntwrk/midnight-js-contracts": "^4.1.1",
@@ -29,21 +29,21 @@
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "effect": "^3.22.1",
-    "lucide-react": "^1.33.0",
-    "next": "16.3.2",
+    "lucide-react": "^1.41.0",
+    "next": "16.3.4",
     "react": "19.2.8",
     "react-dom": "19.2.8",
     "tailwind-merge": "^3.6.0"
   },
   "devDependencies": {
-    "@tailwindcss/postcss": "^4",
+    "@tailwindcss/postcss": "^4.3.3",
     "@types/node": "^20",
-    "@types/react": "^19",
-    "@types/react-dom": "^19",
+    "@types/react": "^19.2.18",
+    "@types/react-dom": "^19.2.7",
     "eslint": "^9",
-    "eslint-config-next": "16.3.2",
-    "tailwindcss": "^4",
-    "tsx": "^4.23.12",
+    "eslint-config-next": "16.3.4",
+    "tailwindcss": "^4.3.3",
+    "tsx": "^4.23.13",
     "typescript": "^5"
   }
 }
